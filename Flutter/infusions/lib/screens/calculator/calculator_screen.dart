@@ -5,6 +5,127 @@ import 'package:flutter/material.dart';
 import 'package:infusions/miscellaneous/services/infusion_service.dart';
 import 'package:infusions/l10n/app_localizations.dart';
 
+// 1. State logic moved to a ChangeNotifier for clean reactivity
+class CalculatorNotifier extends ChangeNotifier {
+  final TextEditingController doseController = TextEditingController();
+  final TextEditingController volumeController = TextEditingController();
+  final TextEditingController weightController = TextEditingController();
+  final TextEditingController inputController = TextEditingController(); 
+
+  String selectedDrugUnit = 'mg';
+  String selectedOutputUnit = 'mg/hora';
+  bool useWeight = false;
+  bool isCalculatingDose = true; 
+  String concentrationDisplay = '---';
+  String resultNumber = '0';
+  bool isResultPending = false;
+
+  final List<String> drugUnits = ['g', 'mg', 'mcg', 'ng'];
+  final List<String> outputUnits = [
+    'g/min', 'g/kg/min', 'g/hora', 'g/kg/hora', 'g/día', 'g/kg/día',
+    'mg/min', 'mg/kg/min', 'mg/hora', 'mg/kg/hora', 'mg/día', 'mg/kg/día',
+    'mcg/min', 'mcg/kg/min', 'mcg/hora', 'mcg/kg/hora', 'mcg/día', 'mcg/kg/día',
+    'ng/min', 'ng/kg/min', 'ng/hora', 'ng/kg/hora'
+  ];
+
+  CalculatorNotifier() {
+    doseController.addListener(performCalculations);
+    volumeController.addListener(performCalculations);
+    weightController.addListener(performCalculations);
+    inputController.addListener(performCalculations);
+  }
+
+  @override
+  void dispose() {
+    doseController.dispose();
+    volumeController.dispose();
+    weightController.dispose();
+    inputController.dispose();
+    super.dispose();
+  }
+
+  void updateDrugUnit(String unit) {
+    selectedDrugUnit = unit;
+    performCalculations();
+  }
+
+  void updateOutputUnit(String unit) {
+    selectedOutputUnit = unit;
+    performCalculations();
+  }
+
+  void toggleUseWeight(bool value) {
+    useWeight = value;
+    performCalculations();
+  }
+
+  void toggleMode(bool isDose) {
+    isCalculatingDose = isDose;
+    inputController.clear();
+    resultNumber = '0';
+    isResultPending = false;
+    notifyListeners();
+  }
+
+  void performCalculations() {
+    final double dose = double.tryParse(doseController.text) ?? 0.0;
+    final double volume = double.tryParse(volumeController.text) ?? 0.0;
+    final double weight = double.tryParse(weightController.text) ?? 0.0;
+    final double inputValue = double.tryParse(inputController.text) ?? 0.0;
+
+    if (dose == 0 || volume == 0) {
+      concentrationDisplay = '---';
+      resultNumber = '0';
+      isResultPending = false;
+      notifyListeners();
+      return;
+    }
+
+    final double concentrationMcg = InfusionService.getConcentration(dose, selectedDrugUnit, volume);
+    final double visualConcentration = dose / volume;
+    final String cleanConcentration = visualConcentration
+        .toStringAsFixed(7)
+        .replaceAll(RegExp(r'([.]*0+)(?!.*\d)'), '');
+
+    concentrationDisplay = '$cleanConcentration $selectedDrugUnit/ml';
+
+    if (inputValue == 0) {
+      resultNumber = '0';
+      isResultPending = false;
+      notifyListeners();
+      return;
+    }
+
+    if (isCalculatingDose) {
+      final result = InfusionService.calculateDose(
+        pumpRateMlHr: inputValue,
+        concentrationMcgMl: concentrationMcg,
+        weightKg: weight,
+        useWeight: useWeight,
+        outputFormat: selectedOutputUnit,
+      );
+      
+      isResultPending = false;
+      resultNumber = result.toStringAsFixed(4).replaceAll(RegExp(r'([.]*0+)(?!.*\d)'), '');
+    } else {
+      final result = InfusionService.calculatePumpRate(
+        desiredDose: inputValue,
+        concentrationMcgMl: concentrationMcg,
+        weightKg: weight,
+        useWeight: useWeight,
+        inputFormat: selectedOutputUnit,
+      );
+
+      isResultPending = false;
+      resultNumber = result.toStringAsFixed(2).replaceAll(RegExp(r'([.]*0+)(?!.*\d)'), '');
+    }
+    
+    // Broadcast changes to the UI layer
+    notifyListeners();
+  }
+}
+
+// 2. The main screen now simply listens to the CalculatorNotifier
 class CalculatorScreen extends StatefulWidget {
   const CalculatorScreen({super.key});
 
@@ -13,113 +134,18 @@ class CalculatorScreen extends StatefulWidget {
 }
 
 class _CalculatorScreenState extends State<CalculatorScreen> {
-  // Controllers
-  final TextEditingController _doseController = TextEditingController();
-  final TextEditingController _volumeController = TextEditingController();
-  final TextEditingController _weightController = TextEditingController();
-  final TextEditingController _inputController = TextEditingController(); 
-
-  // State Variables
-  String _selectedDrugUnit = 'mg';
-  String _selectedOutputUnit = 'mg/hora';
-  bool _useWeight = false;
-  bool _isCalculatingDose = true; 
-  String _concentrationDisplay = '---';
-  
-  // Result Display Variables updated for localization
-  String _resultNumber = '0';
-  bool _isResultPending = false;
-
-  final List<String> _drugUnits = ['g', 'mg', 'mcg', 'ng'];
-  final List<String> _outputUnits = [
-    'g/min', 'g/kg/min', 'g/hora', 'g/kg/hora', 'g/día', 'g/kg/día',
-    'mg/min', 'mg/kg/min', 'mg/hora', 'mg/kg/hora', 'mg/día', 'mg/kg/día',
-    'mcg/min', 'mcg/kg/min', 'mcg/hora', 'mcg/kg/hora', 'mcg/día', 'mcg/kg/día',
-    'ng/min', 'ng/kg/min', 'ng/hora', 'ng/kg/hora'
-  ];
+  late final CalculatorNotifier _notifier;
 
   @override
   void initState() {
     super.initState();
-    _doseController.addListener(_performCalculations);
-    _volumeController.addListener(_performCalculations);
-    _weightController.addListener(_performCalculations);
-    _inputController.addListener(_performCalculations);
+    _notifier = CalculatorNotifier();
   }
 
   @override
   void dispose() {
-    _doseController.dispose();
-    _volumeController.dispose();
-    _weightController.dispose();
-    _inputController.dispose();
+    _notifier.dispose();
     super.dispose();
-  }
-
-  void _performCalculations() {
-    //final l10n = AppLocalizations.of(context)!;
-    final double dose = double.tryParse(_doseController.text) ?? 0.0;
-    final double volume = double.tryParse(_volumeController.text) ?? 0.0;
-    final double weight = double.tryParse(_weightController.text) ?? 0.0;
-    final double inputValue = double.tryParse(_inputController.text) ?? 0.0;
-
-    if (dose == 0 || volume == 0) {
-      setState(() {
-        _concentrationDisplay = '---';
-        _resultNumber = '0';
-        _isResultPending = false;
-      });
-      return;
-    }
-
-    final double concentrationMcg = InfusionService.getConcentration(dose, _selectedDrugUnit, volume);
-    final double visualConcentration = dose / volume;
-    final String cleanConcentration = visualConcentration
-        .toStringAsFixed(7)
-        .replaceAll(RegExp(r'([.]*0+)(?!.*\d)'), '');
-
-    setState(() {
-      _concentrationDisplay = '$cleanConcentration $_selectedDrugUnit/ml';
-    });
-
-    if (inputValue == 0) {
-      setState(() {
-        _resultNumber = '0';
-        _isResultPending = false;
-      });
-      return;
-    }
-
-    // Realizar la operación correspondiente según la pestaña activa
-    if (_isCalculatingDose) {
-      final result = InfusionService.calculateDose(
-        pumpRateMlHr: inputValue,
-        concentrationMcgMl: concentrationMcg,
-        weightKg: weight,
-        useWeight: _useWeight,
-        outputFormat: _selectedOutputUnit,
-      );
-      
-      setState(() {
-        _isResultPending = false;
-        _resultNumber = result.toStringAsFixed(4).replaceAll(RegExp(r'([.]*0+)(?!.*\d)'), '');
-      });
-    } else {
-      // Calcular la velocidad necesaria en ml/hr
-      final result = InfusionService.calculatePumpRate(
-        desiredDose: inputValue,
-        concentrationMcgMl: concentrationMcg,
-        weightKg: weight,
-        useWeight: _useWeight,
-        inputFormat: _selectedOutputUnit,
-      );
-
-      setState(() {
-        _isResultPending = false;
-        // Las velocidades de bomba se suelen representar con 1 o 2 decimales
-        _resultNumber = result.toStringAsFixed(2).replaceAll(RegExp(r'([.]*0+)(?!.*\d)'), '');
-      });
-    }
   }
 
   Widget _buildGlassContainer({required Widget child, EdgeInsetsGeometry? padding}) {
@@ -160,21 +186,27 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.only(top: 100.0, left: 16.0, right: 16.0, bottom: 24.0),
-      child: Column(
-        children: [
-          _buildHeaderCard(l10n),
-          const SizedBox(height: 16),
-          _buildMixtureCard(l10n),
-          const SizedBox(height: 16),
-          _buildToggleButtons(l10n),
-          const SizedBox(height: 16),
-          _buildInputSection(l10n),
-          const SizedBox(height: 16),
-          _buildFinalResultCard(l10n), 
-        ],
-      ),
+    // ListenableBuilder auto-rebuilds when notifyListeners() is called
+    return ListenableBuilder(
+      listenable: _notifier,
+      builder: (context, _) {
+        return SingleChildScrollView(
+          padding: const EdgeInsets.only(top: 100.0, left: 16.0, right: 16.0, bottom: 24.0),
+          child: Column(
+            children: [
+              _buildHeaderCard(l10n),
+              const SizedBox(height: 16),
+              _buildMixtureCard(l10n),
+              const SizedBox(height: 16),
+              _buildToggleButtons(l10n),
+              const SizedBox(height: 16),
+              _buildInputSection(l10n),
+              const SizedBox(height: 16),
+              _buildFinalResultCard(l10n), 
+            ],
+          ),
+        );
+      }
     );
   }
 
@@ -265,27 +297,24 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
             children: [
               Expanded(
                 flex: 1,
-                child: _buildTextField(l10n.drugDose, _doseController, '0'),
+                child: _buildTextField(l10n.drugDose, _notifier.doseController, '0'),
               ),
               const SizedBox(width: 16),
               Expanded(
                 flex: 1,
-                child: _buildDropdown(l10n.unit, _selectedDrugUnit, _drugUnits, (val) {
-                  setState(() {
-                    _selectedDrugUnit = val!;
-                    _performCalculations();
-                  });
+                child: _buildDropdown(l10n.unit, _notifier.selectedDrugUnit, _notifier.drugUnits, (val) {
+                  _notifier.updateDrugUnit(val!);
                 }),
               ),
             ],
           ),
           const SizedBox(height: 16),
-          _buildTextField(l10n.totalVolumeMl, _volumeController, '100', suffix: 'ml'),
+          _buildTextField(l10n.totalVolumeMl, _notifier.volumeController, '100', suffix: 'ml'),
           const SizedBox(height: 16),
           Align(
             alignment: Alignment.centerRight,
             child: Text(
-              '${l10n.concentration} $_concentrationDisplay', 
+              '${l10n.concentration} ${_notifier.concentrationDisplay}', 
               style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color, fontWeight: FontWeight.w600),
             ),
           ),
@@ -299,23 +328,20 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
               ),
               child: CheckboxListTile(
                 title: Text(l10n.calculateDoseByWeight),
-                value: _useWeight,
+                value: _notifier.useWeight,
                 activeColor: primaryColor,
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
                 onChanged: (bool? value) {
-                  setState(() {
-                    _useWeight = value ?? false;
-                    _performCalculations();
-                  });
+                  _notifier.toggleUseWeight(value ?? false);
                 },
               ),
             ),
           ),
           
-          if (_useWeight) ...[
+          if (_notifier.useWeight) ...[
             const SizedBox(height: 8),
-            _buildTextField(l10n.patientWeight, _weightController, '69', suffix: 'kg'),
+            _buildTextField(l10n.patientWeight, _notifier.weightController, '69', suffix: 'kg'),
           ]
         ],
       ),
@@ -332,23 +358,16 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         children: [
           Expanded(
             child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _isCalculatingDose = true;
-                  _inputController.clear();
-                  _resultNumber = '0';
-                  _isResultPending = false;
-                });
-              },
+              onTap: () => _notifier.toggleMode(true),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 decoration: BoxDecoration(
-                  color: _isCalculatingDose 
+                  color: _notifier.isCalculatingDose 
                       ? primaryColor.withAlpha(30) 
                       : Colors.transparent,
                   borderRadius: const BorderRadius.horizontal(left: Radius.circular(20)),
-                  border: _isCalculatingDose 
+                  border: _notifier.isCalculatingDose 
                       ? Border.all(color: primaryColor.withAlpha(125)) 
                       : Border.all(color: Colors.transparent),
                 ),
@@ -356,7 +375,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                   child: Text(
                     l10n.getDose,
                     style: TextStyle(
-                      color: _isCalculatingDose 
+                      color: _notifier.isCalculatingDose 
                           ? primaryColor 
                           : (isDark ? Colors.white54 : Colors.grey),
                       fontWeight: FontWeight.bold,
@@ -368,23 +387,16 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           ),
           Expanded(
             child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _isCalculatingDose = false;
-                  _inputController.clear();
-                  _resultNumber = '0';
-                  _isResultPending = false;
-                });
-              },
+              onTap: () => _notifier.toggleMode(false),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 decoration: BoxDecoration(
-                  color: !_isCalculatingDose 
+                  color: !_notifier.isCalculatingDose 
                       ? primaryColor.withAlpha(30) 
                       : Colors.transparent,
                   borderRadius: const BorderRadius.horizontal(right: Radius.circular(20)),
-                  border: !_isCalculatingDose 
+                  border: !_notifier.isCalculatingDose 
                       ? Border.all(color: primaryColor.withAlpha(125)) 
                       : Border.all(color: Colors.transparent),
                 ),
@@ -392,7 +404,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
                   child: Text(
                     l10n.getRate,
                     style: TextStyle(
-                      color: !_isCalculatingDose 
+                      color: !_notifier.isCalculatingDose 
                           ? primaryColor 
                           : (isDark ? Colors.white54 : Colors.grey),
                       fontWeight: FontWeight.bold,
@@ -415,10 +427,10 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           child: _buildGlassContainer(
             padding: const EdgeInsets.all(12),
             child: _buildTextField(
-              _isCalculatingDose ? l10n.pumpRateInput : l10n.desiredDose,
-              _inputController,
+              _notifier.isCalculatingDose ? l10n.pumpRateInput : l10n.desiredDose,
+              _notifier.inputController,
               '0',
-              suffix: _isCalculatingDose ? 'ml/hr' : '',
+              suffix: _notifier.isCalculatingDose ? 'ml/hr' : '',
             ),
           ),
         ),
@@ -429,13 +441,10 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
             padding: const EdgeInsets.all(12),
             child: _buildDropdown(
               l10n.showIn, 
-              _selectedOutputUnit, 
-              _outputUnits, 
+              _notifier.selectedOutputUnit, 
+              _notifier.outputUnits, 
               (val) {
-                setState(() {
-                  _selectedOutputUnit = val!;
-                  _performCalculations();
-                });
+                _notifier.updateOutputUnit(val!);
               }
             ),
           ),
@@ -451,8 +460,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         : const Color(0xFFE5F9F6); 
     final textColor = isDark ? Colors.white : const Color(0xFF0D7A85); 
 
-    final currentLabel = _isCalculatingDose ? l10n.infusedDose : l10n.pumpRateResult;
-    final displayValue = _isResultPending ? l10n.pending : _resultNumber;
+    final currentLabel = _notifier.isCalculatingDose ? l10n.infusedDose : l10n.pumpRateResult;
+    final displayValue = _notifier.isResultPending ? l10n.pending : _notifier.resultNumber;
 
     return Container(
       width: double.infinity,
@@ -479,13 +488,13 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
             style: TextStyle(
               color: textColor,
               fontWeight: FontWeight.bold,
-              fontSize: _isResultPending ? 32 : 42,
+              fontSize: _notifier.isResultPending ? 32 : 42,
               height: 1.1,
             ),
           ),
           const SizedBox(height: 4),
           Text(
-            _isCalculatingDose ? _selectedOutputUnit : 'ml/hr',
+            _notifier.isCalculatingDose ? _notifier.selectedOutputUnit : 'ml/hr',
             style: TextStyle(
               color: textColor.withAlpha(200),
               fontWeight: FontWeight.w500,
@@ -522,7 +531,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         Text(label, style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color, fontSize: 12)),
         const SizedBox(height: 6),
         DropdownButtonFormField<String>(
-          initialValue: value,
+          value: value, // Ensured the value maps dynamically from Notifier
           isExpanded: true,
           decoration: const InputDecoration(),
           items: items.map((String item) {
