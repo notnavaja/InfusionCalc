@@ -20,6 +20,8 @@ InfusionCalc es una calculadora de infusiones médicas moderna, rápida y comple
 * **Tipografía:** Google Fonts (Inter) integrada nativamente para soporte sin conexión
 * **Localización:** Flutter l10n (archivos .arb)
 
+![License: GNU GPL v3](https://img.shields.io/badge/License-gpl3.0-blue.svg)
+
 # InfusionCalc
 
 ### Health is a right, not a privilege.
@@ -41,5 +43,7 @@ InfusionCalc is a modern, fast, and completely offline medical infusion calculat
 * **Design:** Custom Glassmorphism UI
 * **Typography:** Google Fonts (Inter) natively bundled for offline support
 * **Localization:** Flutter l10n (.arb files)
+
+![License: GNU GPL v3](https://img.shields.io/badge/License-gpl3.0-blue.svg)
 
 ***
