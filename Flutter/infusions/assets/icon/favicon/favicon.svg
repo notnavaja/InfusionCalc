@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"><metadata><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:dc="http://purl.org/dc/elements/1.1/"><rdf:Description><dc:creator>RealFaviconGenerator</dc:creator><dc:source>https://realfavicongenerator.net</dc:source></rdf:Description></rdf:RDF></metadata><defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1565C0"></stop>
+      <stop offset="100%" stop-color="#0B2C5E"></stop>
+    </linearGradient>
+    <linearGradient id="dropGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#4DD0E1"></stop>
+      <stop offset="100%" stop-color="#26B29D"></stop>
+    </linearGradient>
+  </defs><rect width="512" height="512" rx="115" fill="url(#bgGrad)"></rect><path d="M256 120 C 256 120, 156 270, 156 340 C 156 395, 200 440, 256 440 C 312 440, 356 395, 356 340 C 356 270, 256 120, 256 120 Z" fill="url(#dropGrad)"></path><path d="M241 290 v-30 h30 v30 h30 v30 h-30 v30 h-30 v-30 h-30 v-30 h30 z" fill="#ffffff"></path></svg>
