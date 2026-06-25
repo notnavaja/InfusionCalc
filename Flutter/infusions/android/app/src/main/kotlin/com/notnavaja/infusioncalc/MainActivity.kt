@@ -1,4 +1,4 @@
-package com.habba.infusioncalc
+package com.notnavaja.infusioncalc
 
 import io.flutter.embedding.android.FlutterActivity
 
